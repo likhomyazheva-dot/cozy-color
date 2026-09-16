@@ -1,0 +1,78 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Cozy Color — Mediterranean</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;font-family:-apple-system,sans-serif;background:#eee9df}
+header{height:62px;background:#fff;display:flex;align-items:center;padding:8px 12px;gap:10px;border-bottom:1px solid #ddd}
+header b{font-size:16px}.sp{flex:1}button{border:1px solid #ccc;background:#fff;border-radius:10px;padding:9px 11px}
+#wrap{position:absolute;top:62px;bottom:102px;left:0;right:0;overflow:hidden;touch-action:none}
+#board{position:absolute;left:50%;top:50%;width:min(94vw,680px);aspect-ratio:3/4;background:white;transform-origin:center;touch-action:none;box-shadow:0 8px 25px #0002}
+svg,canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+#paint{z-index:1}#art{z-index:2;pointer-events:none}
+.region{fill:white;stroke:#777;stroke-width:1.25;vector-effect:non-scaling-stroke}
+.num{font:12px Georgia;fill:#666;text-anchor:middle;dominant-baseline:middle}
+#palette{position:absolute;bottom:0;left:0;right:0;height:102px;background:white;display:flex;gap:8px;overflow-x:auto;padding:11px}
+.sw{flex:0 0 56px;height:68px;border-radius:14px;border:3px solid transparent;background:var(--c);font-weight:700}.sw.sel{border-color:#111;transform:translateY(-3px)}
+</style></head><body>
+<header><b>Балкон у моря · тест картины</b><span class="sp"></span><button id="clear">Очистить</button></header>
+<div id="wrap"><div id="board"><canvas id="paint"></canvas><svg id="art" viewBox="0 0 600 800"></svg></div></div>
+<div id="palette"></div>
+<script>
+const C=['#f3ead6','#e5c9a5','#dba06d','#c77b55','#9d5d43','#77855f','#91a57a','#b9d8e7','#83b3cf','#4e7c9d','#edb2b4','#d97b82','#bb4d58','#8c3038','#d9d4ca','#aaa69e','#6f706c','#363a3c'];
+let selected=0,drawing=false,last=null,scale=1,tx=0,ty=0,started=new Set();
+const regs=[
+[8,"M0 0H600V210H0Z",300,85],[9,"M0 210H600V330H0Z",300,265],
+[1,"M0 0H105V590L0 640Z",48,300],[2,"M105 0H185L175 555L105 590Z",145,285],
+[6,"M185 0H300L280 210H185Z",238,90],[7,"M300 0H425L420 210H280Z",350,95],
+[11,"M425 0H600V80L500 105Z",520,40],[15,"M500 105L600 80V210H535Z",565,145],
+[10,"M420 210H600V330L520 315Z",535,260],
+[17,"M185 210H280L260 360L175 390L178 300Z",225,295],
+[18,"M0 210H105V590L0 640Z",52,430],
+[16,"M0 640L105 590L175 555L210 650L145 800H0Z",75,700],
+[6,"M175 390L260 360L355 410L320 520L210 500Z",270,435],
+[3,"M260 360L420 330L520 315L475 455L355 410Z",405,385],
+[4,"M210 500L320 520L475 455L450 610L300 650Z",355,550],
+[12,"M475 455L600 330V600L450 610Z",535,515],
+[5,"M145 800L210 650L300 650L350 800Z",245,725],
+[13,"M300 650L450 610L470 800H350Z",400,720],[14,"M450 610L600 600V800H470Z",530,700],
+// architectural objects, all non-overlapping within the upper/right scene
+[4,"M455 150L485 150L485 210H455Z",470,180],[14,"M462 112L478 112L485 150H455Z",470,135],
+[3,"M430 270L470 240L510 270V315H430Z",470,280],[5,"M470 240L490 220L510 270Z",490,247],
+// table
+[15,"M220 600Q300 565 380 600Q300 635 220 600Z",300,600],
+[17,"M285 620H315L330 800H270Z",300,700],
+// cup
+[2,"M275 555Q300 545 325 555V585Q300 595 275 585Z",300,570],
+// book
+[1,"M325 575L390 560L430 590L360 610Z",378,585],
+// plant pot
+[5,"M70 590L125 590L115 660H80Z",98,625],
+[6,"M92 590L70 520L100 550L110 490L120 555L145 515L125 590Z",108,545],
+// cat body/head
+[3,"M120 480Q170 430 230 475Q250 520 210 555Q150 570 115 530Z",175,515],
+[4,"M135 455L150 420L170 450L195 425L205 470Q165 485 135 455Z",170,458],
+// balcony rail
+[17,"M0 455H600V475H0Z",45,465],
+[17,"M45 475H58V640H45Z",52,545],[17,"M155 475H168V570H155Z",162,525],[17,"M435 475H448V620H435Z",442,540],[17,"M550 475H563V610H550Z",557,540],
+// clouds
+[1,"M310 70Q340 35 370 70Q410 45 435 82Q400 105 330 100Z",375,80],
+[1,"M470 45Q495 20 520 45Q545 30 565 60Q530 78 485 70Z",520,55],
+// boats
+[18,"M340 275L360 275L350 287Z",350,280],[1,"M350 245V275L370 275Z",358,262],
+[18,"M385 300L405 300L395 310Z",395,304],[1,"M395 278V300L412 300Z",400,291]
+];
+const art=document.getElementById('art'),paint=document.getElementById('paint'),pc=paint.getContext('2d'),board=document.getElementById('board'),wrap=document.getElementById('wrap');
+function buildArt(){art.innerHTML='';regs.forEach((r,i)=>{let p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('d',r[1]);p.setAttribute('class','region');p.dataset.i=i;art.appendChild(p);if(!started.has(i)){let t=document.createElementNS('http://www.w3.org/2000/svg','text');t.setAttribute('x',r[2]);t.setAttribute('y',r[3]);t.setAttribute('class','num');t.textContent=r[0];art.appendChild(t)}})}
+function setup(){let d=Math.min(devicePixelRatio||1,2);paint.width=600*d;paint.height=800*d;pc.setTransform(d,0,0,d,0,0);buildArt()}
+function local(e){let r=paint.getBoundingClientRect();return{x:(e.clientX-r.left)*600/r.width,y:(e.clientY-r.top)*800/r.height}}
+function getRegion(x,y){let els=[...art.querySelectorAll('.region')];for(let k=els.length-1;k>=0;k--){if(els[k].isPointInFill(new DOMPoint(x,y))){let i=+els[k].dataset.i;return{i,r:regs[i],el:els[k]}}}return null}
+function dot(x,y){let h=getRegion(x,y);if(!h||h.r[0]-1!==selected)return;if(!started.has(h.i)){started.add(h.i);buildArt()}let path=new Path2D(h.r[1]);pc.save();pc.clip(path);pc.fillStyle=C[selected];pc.beginPath();pc.arc(x,y,17,0,Math.PI*2);pc.fill();pc.restore()}
+paint.addEventListener('pointerdown',e=>{if(e.pointerType==='pen'){e.preventDefault();drawing=true;last=local(e);dot(last.x,last.y);paint.setPointerCapture(e.pointerId)}},{passive:false});
+paint.addEventListener('pointermove',e=>{if(!drawing||e.pointerType!=='pen')return;e.preventDefault();let p=local(e),dx=p.x-last.x,dy=p.y-last.y,n=Math.max(1,Math.ceil(Math.hypot(dx,dy)/4));for(let i=1;i<=n;i++)dot(last.x+dx*i/n,last.y+dy*i/n);last=p},{passive:false});
+paint.addEventListener('pointerup',()=>{drawing=false;last=null});
+let sd=0,ss=1,sm=null,stx=0,sty=0;wrap.addEventListener('touchstart',e=>{if(e.touches.length===2){e.preventDefault();let a=e.touches[0],b=e.touches[1];sd=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);ss=scale;sm={x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};stx=tx;sty=ty}},{passive:false});
+wrap.addEventListener('touchmove',e=>{if(e.touches.length===2){e.preventDefault();let a=e.touches[0],b=e.touches[1],d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),m={x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};scale=Math.max(.8,Math.min(5,ss*d/sd));tx=stx+m.x-sm.x;ty=sty+m.y-sm.y;apply()}},{passive:false});
+function apply(){board.style.transform=`translate(calc(-50% + ${tx}px),calc(-50% + ${ty}px)) scale(${scale})`}
+const pal=document.getElementById('palette');C.forEach((c,i)=>{let b=document.createElement('button');b.className='sw'+(i===0?' sel':'');b.style.setProperty('--c',c);b.textContent=i+1;b.onclick=()=>{selected=i;document.querySelectorAll('.sw').forEach(x=>x.classList.remove('sel'));b.classList.add('sel')};pal.appendChild(b)});
+document.getElementById('clear').onclick=()=>{pc.clearRect(0,0,600,800);started.clear();buildArt()};setup();apply();
+</script></body></html>
