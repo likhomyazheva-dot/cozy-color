@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Cozy Color v5</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;font-family:-apple-system,sans-serif;background:#eee9df}
+header{height:64px;background:#fff;padding:8px 12px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #ddd;z-index:5}
+#status{font-size:12px;color:#666}.spacer{flex:1}button{padding:9px 12px;border:1px solid #ccc;border-radius:10px;background:#fff}
+#wrap{position:absolute;top:64px;bottom:105px;left:0;right:0;overflow:hidden;touch-action:none}
+#board{position:absolute;left:50%;top:50%;width:min(92vw,680px);aspect-ratio:2/3;background:#fff;touch-action:none;transform-origin:center}
+canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+#palette{position:absolute;bottom:0;left:0;right:0;height:105px;background:#fff;display:flex;gap:8px;overflow-x:auto;padding:12px;z-index:5}
+.sw{flex:0 0 58px;height:70px;border:3px solid transparent;border-radius:14px;background:var(--c);font-weight:700}
+.sw.sel{border-color:#111}
+</style></head>
+<body>
+<header><b>Cozy Color v5</b><span id="status">Pencil рисует · 2 пальца масштабируют</span><span class="spacer"></span><button id="clear">Очистить</button></header>
+<div id="wrap"><div id="board"><canvas id="paint"></canvas><canvas id="grid"></canvas></div></div>
+<div id="palette"></div>
+<script>
+const colors=['#f1ead6','#dfc7a3','#dda36f','#edc49c','#bd8a63','#a96340','#a34e32','#788865','#879976','#526340','#a8c7d6','#8eabc4','#5b7d9c','#e9b0b5','#d77b86','#bf5365','#982d36','#c8c5bf','#9c9c99','#353535'];
+let selected=0,drawing=false,last=null,scale=1,tx=0,ty=0;
+const startedCells=new Set();
+const paint=document.getElementById('paint'), grid=document.getElementById('grid');
+const pc=paint.getContext('2d'),gc=grid.getContext('2d'),board=document.getElementById('board'),wrap=document.getElementById('wrap');
+const pal=document.getElementById('palette');
+colors.forEach((col,i)=>{let b=document.createElement('button');b.className='sw'+(i===0?' sel':'');b.style.setProperty('--c',col);b.textContent=i+1;b.onclick=()=>{selected=i;document.querySelectorAll('.sw').forEach(x=>x.classList.remove('sel'));b.classList.add('sel')};pal.appendChild(b)});
+
+function setup(){
+ let r=board.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,2), old=null;
+ if(paint.width) try{old=paint.toDataURL()}catch(e){}
+ [paint,grid].forEach(cv=>{cv.width=(board.offsetWidth)*d;cv.height=(board.offsetHeight)*d;cv.getContext('2d').setTransform(d,0,0,d,0,0)});
+ drawGrid();
+ if(old){let im=new Image();im.onload=()=>pc.drawImage(im,0,0,board.offsetWidth,board.offsetHeight);im.src=old}
+}
+function drawGrid(){
+ let w=board.offsetWidth,h=board.offsetHeight,cols=5,rows=8;
+ gc.clearRect(0,0,w,h);gc.strokeStyle='#777';gc.lineWidth=1;gc.font='14px -apple-system';gc.textAlign='center';gc.textBaseline='middle';
+ for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){let cw=w/cols,ch=h/rows,n=(x+y*2)%20;gc.strokeRect(x*cw+2,y*ch+2,cw-4,ch-4);if(!startedCells.has(x+','+y)){gc.fillStyle='#777';gc.fillText(n+1,(x+.5)*cw,(y+.5)*ch)}}
+}
+function cell(x,y){let w=board.offsetWidth,h=board.offsetHeight,cx=Math.floor(x/(w/5)),cy=Math.floor(y/(h/8));if(cx<0||cy<0||cx>=5||cy>=8)return null;return{cx,cy,n:(cx+cy*2)%20,cw:w/5,ch:h/8}}
+function dot(x,y){let q=cell(x,y);if(!q||q.n!==selected)return;let key=q.cx+','+q.cy;if(!startedCells.has(key)){startedCells.add(key);drawGrid()}pc.save();pc.beginPath();pc.rect(q.cx*q.cw+3,q.cy*q.ch+3,q.cw-6,q.ch-6);pc.clip();pc.fillStyle=colors[selected];pc.beginPath();pc.arc(x,y,15,0,Math.PI*2);pc.fill();pc.restore()}
+function local(e){let r=paint.getBoundingClientRect();return{x:(e.clientX-r.left)/scale,y:(e.clientY-r.top)/scale}}
+paint.addEventListener('pointerdown',e=>{if(e.pointerType==='pen'){e.preventDefault();drawing=true;last=local(e);dot(last.x,last.y);paint.setPointerCapture(e.pointerId)}},{passive:false});
+paint.addEventListener('pointermove',e=>{if(!drawing||e.pointerType!=='pen')return;e.preventDefault();let p=local(e),dx=p.x-last.x,dy=p.y-last.y,N=Math.max(1,Math.ceil(Math.hypot(dx,dy)/4));for(let i=1;i<=N;i++)dot(last.x+dx*i/N,last.y+dy*i/N);last=p},{passive:false});
+paint.addEventListener('pointerup',e=>{if(e.pointerType==='pen'){drawing=false;last=null}},{passive:false});
+grid.style.pointerEvents='none';
+
+let startDist=0,startScale=1,startMid=null,startTx=0,startTy=0;
+wrap.addEventListener('touchstart',e=>{
+ if(e.touches.length===2){e.preventDefault();let a=e.touches[0],b=e.touches[1];startDist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);startScale=scale;startMid={x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};startTx=tx;startTy=ty}
+},{passive:false});
+wrap.addEventListener('touchmove',e=>{
+ if(e.touches.length===2){e.preventDefault();let a=e.touches[0],b=e.touches[1],dist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),mid={x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};scale=Math.max(.8,Math.min(5,startScale*dist/startDist));tx=startTx+(mid.x-startMid.x);ty=startTy+(mid.y-startMid.y);apply()}
+},{passive:false});
+function apply(){board.style.transform=`translate(calc(-50% + ${tx}px),calc(-50% + ${ty}px)) scale(${scale})`}
+apply();
+document.getElementById('clear').onclick=()=>{pc.clearRect(0,0,board.offsetWidth,board.offsetHeight);startedCells.clear();drawGrid()};
+window.addEventListener('resize',setup);setup();
+</script></body></html>
